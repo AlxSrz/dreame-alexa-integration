@@ -1,0 +1,24 @@
+# Añadir/mezclar estos bloques dentro de homeassistant/config/configuration.yaml
+# (NO reemplaces todo el archivo, Home Assistant ya trae uno por defecto — solo
+# agrega/edita las claves "http:" y "alexa:").
+
+http:
+  use_x_forwarded_for: true
+  trusted_proxies:
+    - 127.0.0.1
+
+# Rellenar client_id / client_secret DESPUÉS de crear la skill en el paso 5
+# del README (Alexa Developer Console > Account Linking).
+alexa:
+  smart_home:
+    locale: es-MX
+    endpoint: https://api.amazonalexa.com/v3/events
+    client_id: PEGAR_AQUI_EL_CLIENT_ID_DE_LA_SKILL
+    client_secret: PEGAR_AQUI_UN_SECRETO_INVENTADO
+    filter:
+      include_domains:
+        - vacuum
+      # Si además quieres exponer switches/zonas creadas como helpers:
+      # include_entities:
+      #   - switch.limpiar_sala
+      #   - switch.limpiar_cocina
