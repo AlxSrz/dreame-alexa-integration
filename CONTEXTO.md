@@ -117,7 +117,27 @@ es reemplazar `default_config:` por una lista explícita sin
 `radio_browser`/`go2rtc`/`stream` ni los discovery (`ssdp`, `zeroconf`,
 `dhcp`, `usb`, `bluetooth`) — en este VPS no hay LAN que descubrir.
 
-**Siguientes pasos (Pasos 5-7 del README):** skill privada en Alexa Developer
-Console + bloque `alexa:` con `client_id`/`client_secret` reales, función AWS
-Lambda puente y pruebas con "Alexa, descubre dispositivos". Pendiente también
-lo de las zonas como `switch` helpers (ver arriba).
+**Pasos 4, 5 y 6 completados (27 sept 2026):**
+- Bloque `alexa:` con los valores reales de la skill aplicado en el
+  `configuration.yaml` del droplet (`client_id: https://pitangui.amazon.com/`
+  — región Norteamérica, que es la que sirve a México). **El `client_secret`
+  NO está en este repo a propósito** (repo público); vive solo en el droplet.
+- Skill privada creada en Alexa Developer Console. Skill ID:
+  `amzn1.ask.skill.20c9a886-3f35-4f7d-bb4d-b4bedd909fe0`.
+- Función AWS Lambda puente desplegada en la cuenta personal de AWS
+  (`283449825232`, usuario IAM `dreame-lambda-setup` con permisos acotados a
+  Lambda + el rol del puente). Rol: `dreame-alexa-lambda-role`. Función:
+  `dreame-alexa-bridge`, Python 3.12, `us-east-1`, código del gist oficial
+  (copia local en `lambda/lambda_function.py`), `BASE_URL` como variable de
+  entorno, y permiso de invocación restringido a `alexa-appkit.amazon.com`
+  con `EventSourceToken` = Skill ID.
+  ARN: `arn:aws:lambda:us-east-1:283449825232:function:dreame-alexa-bridge`
+- Verificado con invocación de prueba: el handler corre, valida
+  `payloadVersion` y responde `INVALID_REQUEST` ante un evento sin token
+  (comportamiento correcto).
+
+**Pendiente (Paso 7):** pegar el ARN como *Default endpoint* en la pestaña
+Smart Home de la skill, activar la skill en la app de Alexa, completar el
+account linking (login contra `ha.alexa.alce-soft.com`), decir "Alexa,
+descubre dispositivos" y probar encender/apagar. Pendiente también lo de las
+zonas como `switch` helpers (ver arriba).
