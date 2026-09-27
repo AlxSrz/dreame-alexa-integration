@@ -27,6 +27,17 @@ http:
     - 127.0.0.1
     - 172.20.0.0/16  # subred del bridge de Docker que ve nginx — ajusta si cambia
 
+# El uso real de este proyecto (control por voz con Alexa: iniciar limpieza,
+# limpiar zona, regresar a base, rutinas) solo necesita el ESTADO ACTUAL del
+# robot, nunca el historial. El Recorder (historial/gráficas/logbook) es de
+# los componentes que más RAM y disco consume con el tiempo (guarda cada
+# cambio de estado en una base SQLite que crece sin parar) y no aporta nada
+# aquí — se excluye todo para ahorrar memoria, sin afectar el control por voz.
+recorder:
+  exclude:
+    entity_globs:
+      - "*"
+
 # Rellenar client_id / client_secret DESPUÉS de crear la skill en el paso 5
 # del README (Alexa Developer Console > Account Linking).
 alexa:

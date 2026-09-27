@@ -90,10 +90,35 @@ Alexa (voz) → skill privada de Alexa Smart Home → AWS Lambda (puente, Python
   Docker (`172.20.0.0/16`), no solo `127.0.0.1`, porque así es como nginx
   (en el host) le llega a Home Assistant a través del puerto publicado.
 
-**Antes de continuar con el Paso 3, hace falta:**
-- Que el usuario complete el onboarding (crear su usuario admin) por túnel
-  SSH — ver README Paso 1.
-- Confirmar si HACS ya está instalado en Home Assistant.
-- Confirmar el estado de las cuentas Dreamehome / AWS / Amazon Developer.
+**Onboarding completado:** usuario admin de Home Assistant creado
+(`ha-anbl-srz`) por túnel SSH.
 
-Con esas respuestas se sabe en qué paso del `README.md` retomar el trabajo.
+## Reparto de los pasos 3–7 (acordado con quien administra el droplet)
+
+- **Paso 3 — vincular el robot (lo hace el usuario, desde la web de HA):**
+  instalar HACS, añadir `Tasshack/dreame-vacuum`, reiniciar HA, configurar la
+  integración con correo/contraseña de la app Dreamehome (modo cloud).
+  Verificar que aparece `vacuum.dreame_...` y que se puede iniciar/pausar/
+  limpiar zonas desde el dashboard.
+- **Paso 5 — skill privada en Alexa Developer Console (lo hace el usuario):**
+  crear skill Smart Home ("Provision your own"). En Account Linking:
+  - Authorization URI: `https://ha.alexa.alce-soft.com/auth/authorize`
+  - Access Token URI: `https://ha.alexa.alce-soft.com/auth/token`
+  - Client ID: `https://pitangui.amazon.com/`
+  - Client Secret: una cadena inventada
+  - Scope: `smart_home`
+- **Paso 4 — rellenar el bloque `alexa:` (lo hace quien administra el
+  droplet, por SSH, una vez el usuario tenga el Client ID/Secret del paso 5):**
+  sustituir los placeholders en `configuration.yaml` del droplet y reiniciar
+  HA. (También se puede hacer desde la UI de HA si el usuario prefiere.)
+- **Paso 6 — Lambda (lo hace el usuario):** función Python 3.12 en
+  `us-east-1` con el código del gist de matt2005, variable de entorno
+  `BASE_URL=https://ha.alexa.alce-soft.com`, trigger "Alexa Smart Home" con
+  el Skill ID, y pegar el ARN como Default endpoint de la skill.
+- **Paso 7 — probar (lo hace el usuario):** activar la skill en la app de
+  Alexa, completar el account linking (login contra HA), decir "Alexa,
+  descubre dispositivos".
+
+**Siguiente acción concreta:** el usuario hace el Paso 3 (vincular el robot)
+y el Paso 5 (crear la skill) en paralelo; en cuanto tenga el Client ID/Secret
+reales de la skill, se avisa para aplicar el Paso 4 en el droplet.
