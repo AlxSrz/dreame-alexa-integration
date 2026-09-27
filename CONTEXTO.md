@@ -38,10 +38,10 @@ Alexa (voz) → skill privada de Alexa Smart Home → AWS Lambda (puente, Python
   aloja producción real (alce-fiscal + postgres con datos fiscales de
   clientes + scraper + n8n + elegance-reels) y ya está justo de RAM (al
   revisar: solo ~750 MiB "available", swap ya al ~50% de uso). Mitigación
-  elegida: `mem_limit`/`memswap_limit: 350m` en el contenedor de Home
-  Assistant y sin `privileged`/`network_mode: host` (innecesario porque la
-  integración es cloud, no LAN) — puerto 8123 solo en `127.0.0.1`, nginx del
-  host hace el proxy HTTPS. Detalle completo en `README.md`.
+  elegida: `mem_limit: 768m` / `memswap_limit: 1024m` en el contenedor de
+  Home Assistant y sin `privileged`/`network_mode: host` (innecesario porque
+  la integración es cloud, no LAN) — puerto 8123 solo en `127.0.0.1`, nginx
+  del host hace el proxy HTTPS. Detalle completo en `README.md`.
 - **Dominio elegido:** `ha.alexa.alce-soft.com` (subdominio bajo el dominio
   que ya usa alce-fiscal). El registro DNS tipo A lo crea el usuario — no hay
   automatización de DNS disponible en este entorno.
@@ -90,10 +90,34 @@ Alexa (voz) → skill privada de Alexa Smart Home → AWS Lambda (puente, Python
   Docker (`172.20.0.0/16`), no solo `127.0.0.1`, porque así es como nginx
   (en el host) le llega a Home Assistant a través del puerto publicado.
 
-**Antes de continuar con el Paso 3, hace falta:**
-- Que el usuario complete el onboarding (crear su usuario admin) por túnel
-  SSH — ver README Paso 1.
-- Confirmar si HACS ya está instalado en Home Assistant.
-- Confirmar el estado de las cuentas Dreamehome / AWS / Amazon Developer.
+**Paso 3 completado (mismo día, más tarde):**
+- Onboarding hecho por el usuario (admin `ha-anbl-srz`).
+- HACS instalado y `Tasshack/dreame-vacuum` añadido desde HACS.
+- Robot vinculado: *config entry* `Dreame Vacuum` con título `D10 Plus Gen 2`
+  y `unique_id` = MAC `70:c9:32:c7:f5:1b`; entidad `vacuum.d10_plus_gen_2`
+  registrada y reportando estado `docked` → conexión viva con la nube de
+  Dreamehome (modo cloud, como estaba previsto).
 
-Con esas respuestas se sabe en qué paso del `README.md` retomar el trabajo.
+**Bug encontrado y resuelto: OOM en bucle (mem_limit 512m insuficiente).**
+Con HACS + `dreame_vacuum` el contenedor moría cada ~30 s durante el
+arranque. Evidencia: 12 entradas `Memory cgroup out of memory: Killed process
+... (python3) ... anon-rss:517340kB` en `dmesg`, con
+`oom_memcg=/system.slice/docker-<id>.scope` (el cgroup del propio
+contenedor). `docker inspect ... .State.OOMKilled` devolvía `false` y eso
+despista: Docker resetea ese campo en cada reinicio, así que **no sirve para
+descartar OOM en un contenedor que ya se reinició** — la prueba buena es
+`dmesg` o `memory.events` del cgroup.
+Consumo medido: HA pelado ~338 MiB, en reposo con HACS + Dreame ~442 MiB,
+pico >517 MiB. Se subió a `mem_limit: 768m` / `memswap_limit: 1024m`
+(dejando 256 MiB de swap propio a propósito: con `memswap_limit == mem_limit`
+cualquier pico transitorio es muerte instantánea). Verificado estable en
+441.7 MiB / 768 MiB (57.5%), sin nuevos OOM, HTTP 200 en local y por HTTPS.
+**Si algún día se acerca al techo de forma sostenida**, el siguiente recorte
+es reemplazar `default_config:` por una lista explícita sin
+`radio_browser`/`go2rtc`/`stream` ni los discovery (`ssdp`, `zeroconf`,
+`dhcp`, `usb`, `bluetooth`) — en este VPS no hay LAN que descubrir.
+
+**Siguientes pasos (Pasos 5-7 del README):** skill privada en Alexa Developer
+Console + bloque `alexa:` con `client_id`/`client_secret` reales, función AWS
+Lambda puente y pruebas con "Alexa, descubre dispositivos". Pendiente también
+lo de las zonas como `switch` helpers (ver arriba).
