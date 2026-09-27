@@ -38,10 +38,10 @@ Alexa (voz) → skill privada de Alexa Smart Home → AWS Lambda (puente, Python
   aloja producción real (alce-fiscal + postgres con datos fiscales de
   clientes + scraper + n8n + elegance-reels) y ya está justo de RAM (al
   revisar: solo ~750 MiB "available", swap ya al ~50% de uso). Mitigación
-  elegida: `mem_limit`/`memswap_limit: 350m` en el contenedor de Home
-  Assistant y sin `privileged`/`network_mode: host` (innecesario porque la
-  integración es cloud, no LAN) — puerto 8123 solo en `127.0.0.1`, nginx del
-  host hace el proxy HTTPS. Detalle completo en `README.md`.
+  elegida: `mem_limit: 768m` / `memswap_limit: 1024m` en el contenedor de
+  Home Assistant y sin `privileged`/`network_mode: host` (innecesario porque
+  la integración es cloud, no LAN) — puerto 8123 solo en `127.0.0.1`, nginx
+  del host hace el proxy HTTPS. Detalle completo en `README.md`.
 - **Dominio elegido:** `ha.alexa.alce-soft.com` (subdominio bajo el dominio
   que ya usa alce-fiscal). El registro DNS tipo A lo crea el usuario — no hay
   automatización de DNS disponible en este entorno.
@@ -72,9 +72,10 @@ Alexa (voz) → skill privada de Alexa Smart Home → AWS Lambda (puente, Python
 ## Estado actual (27 sept 2026)
 
 **Pasos 1 y 2 del README completados:**
-- Home Assistant corriendo en `alce-droplet` (`/opt/dreame-ha`), con
-  `mem_limit: 512m`. Verificado estable junto al resto de servicios del
-  droplet (alce-fiscal, scraper, elegance-reels, n8n).
+- Home Assistant corriendo en `alce-droplet` (`/opt/dreame-ha`), inicialmente
+  con `mem_limit: 512m` (subido después a `768m`, ver más abajo). Verificado
+  estable junto al resto de servicios del droplet (alce-fiscal, scraper,
+  elegance-reels, n8n).
 - DNS `ha.alexa.alce-soft.com` → `165.227.209.218` creado y propagado por el
   usuario (Hostgator cPanel → Zone Editor).
 - Certificado Let's Encrypt emitido y desplegado (`certbot --nginx`), sitio
@@ -93,13 +94,51 @@ Alexa (voz) → skill privada de Alexa Smart Home → AWS Lambda (puente, Python
 **Onboarding completado:** usuario admin de Home Assistant creado
 (`ha-anbl-srz`) por túnel SSH.
 
-## Reparto de los pasos 3–7 (acordado con quien administra el droplet)
+**Paso 3 completado:**
+- HACS instalado y `Tasshack/dreame-vacuum` añadido desde HACS (versión beta,
+  necesaria para login con cuenta Dreamehome — la versión estable solo
+  soporta login contra la nube de Xiaomi y daba "Could not login, check the
+  credentials" con una cuenta Dreamehome pura).
+- Robot vinculado: *config entry* `Dreame Vacuum` con título `D10 Plus Gen 2`
+  y `unique_id` = MAC `70:c9:32:c7:f5:1b`; entidad `vacuum.d10_plus_gen_2`
+  registrada y reportando estado `docked` → conexión viva con la nube de
+  Dreamehome (modo cloud, como estaba previsto).
 
-- **Paso 3 — vincular el robot (lo hace el usuario, desde la web de HA):**
-  instalar HACS, añadir `Tasshack/dreame-vacuum`, reiniciar HA, configurar la
-  integración con correo/contraseña de la app Dreamehome (modo cloud).
-  Verificar que aparece `vacuum.dreame_...` y que se puede iniciar/pausar/
-  limpiar zonas desde el dashboard.
+**Bug encontrado y resuelto: OOM en bucle (mem_limit 512m insuficiente).**
+Con HACS + `dreame_vacuum` el contenedor moría cada ~30 s durante el
+arranque. Evidencia: 12 entradas `Memory cgroup out of memory: Killed process
+... (python3) ... anon-rss:517340kB` en `dmesg`, con
+`oom_memcg=/system.slice/docker-<id>.scope` (el cgroup del propio
+contenedor). `docker inspect ... .State.OOMKilled` devolvía `false` y eso
+despista: Docker resetea ese campo en cada reinicio, así que **no sirve para
+descartar OOM en un contenedor que ya se reinició** — la prueba buena es
+`dmesg` o `memory.events` del cgroup.
+Consumo medido: HA pelado ~338 MiB, en reposo con HACS + Dreame ~442 MiB,
+pico >517 MiB. Se subió a `mem_limit: 768m` / `memswap_limit: 1024m`
+(dejando 256 MiB de swap propio a propósito: con `memswap_limit == mem_limit`
+cualquier pico transitorio es muerte instantánea). Verificado estable en
+441.7 MiB / 768 MiB (57.5%), sin nuevos OOM, HTTP 200 en local y por HTTPS.
+También se desactivó el `recorder` (historial/logbook/estadísticas) por
+completo — no aporta nada para control por voz y es de lo que más RAM/disco
+consume con el tiempo.
+**Si algún día se acerca al techo de forma sostenida**, el siguiente recorte
+es reemplazar `default_config:` por una lista explícita sin
+`radio_browser`/`go2rtc`/`stream` ni los discovery (`ssdp`, `zeroconf`,
+`dhcp`, `usb`, `bluetooth`) — en este VPS no hay LAN que descubrir. Si eso
+tampoco alcanza, la alternativa de fondo es mover Home Assistant a su propio
+droplet (evaluado y descartado por ahora, riesgo aceptado — ver decisión
+más abajo).
+
+**Riesgo de fondo reconocido y aceptado (27 sept 2026):** aun con estos
+ajustes, el droplet compartido sigue muy justo de RAM en general (todo el
+sistema, no solo el contenedor de HA). Se decidió **aceptar el riesgo por
+ahora** y seguir avanzando en el droplet compartido en vez de migrar a uno
+separado, dado que ya quedó estable. Si vuelve a fallar, la opción de
+respaldo es un droplet nuevo y dedicado solo para Home Assistant (~$6-12
+USD/mes según RAM, 1-2 GB).
+
+## Reparto de los pasos 4–7 (acordado con quien administra el droplet)
+
 - **Paso 5 — skill privada en Alexa Developer Console (lo hace el usuario):**
   crear skill Smart Home ("Provision your own"). En Account Linking:
   - Authorization URI: `https://ha.alexa.alce-soft.com/auth/authorize`
@@ -119,6 +158,8 @@ Alexa (voz) → skill privada de Alexa Smart Home → AWS Lambda (puente, Python
   Alexa, completar el account linking (login contra HA), decir "Alexa,
   descubre dispositivos".
 
-**Siguiente acción concreta:** el usuario hace el Paso 3 (vincular el robot)
-y el Paso 5 (crear la skill) en paralelo; en cuanto tenga el Client ID/Secret
-reales de la skill, se avisa para aplicar el Paso 4 en el droplet.
+**Siguiente acción concreta:** el usuario hace el Paso 5 (crear la skill); en
+cuanto tenga el Client ID/Secret reales, se avisa para aplicar el Paso 4 en
+el droplet, y luego el usuario sigue con el Paso 6 (Lambda) y el Paso 7
+(prueba). Pendiente también lo de las zonas como `switch` helpers (ver
+arriba, sección de arquitectura).

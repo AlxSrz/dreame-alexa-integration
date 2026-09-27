@@ -25,9 +25,13 @@ de aquí:
   100% cloud, no hay descubrimiento en la LAN del VPS).
 - Publica el puerto 8123 solo en `127.0.0.1` (nginx en el host hace el proxy;
   no queda expuesto directo a internet).
-- Trae `mem_limit`/`memswap_limit: 350m` para que un pico de HA/HACS no
+- Trae `mem_limit: 768m` / `memswap_limit: 1024m` para acotar HA y que no
   arrastre a swap pesado al resto de los servicios (incluida la app fiscal
-  de clientes reales).
+  de clientes reales). **Ojo con bajar este límite:** medido en producción,
+  HA pelado usa ~338 MiB, y con HACS + la integración Dreame se pone en
+  ~442 MiB en reposo. Con `512m` el kernel lo mataba en bucle
+  (*"Memory cgroup out of memory: Killed process python3"*) — ver la nota
+  completa en `docker-compose.yml` y en `CONTEXTO.md`.
 
 Antes de levantar el contenedor, conviene revisar RAM disponible en el
 droplet (`free -h`) — si "available" está muy bajo, ver `CONTEXTO.md` antes
