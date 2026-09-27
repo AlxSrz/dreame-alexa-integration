@@ -1,11 +1,11 @@
-# Dreame D10 Plus Gen 2 → Alexa (vía Home Assistant en tu VPS)
+# Dreame D10 Plus Gen 2 → Alexa (vía Home Assistant en el VPS de alce-fiscal)
 
 Guía paso a paso para controlar el robot por voz con Alexa, sin depender de una
 skill oficial de Dreame (que ya no existe para México). Arquitectura:
 
 ```
 Alexa (voz) → Skill privada → AWS Lambda (gratis) → HTTPS (Nginx + Let's Encrypt)
-            → Home Assistant (Docker, en tu VPS) → integración dreame-vacuum (HACS)
+            → Home Assistant (Docker, en el droplet de alce-fiscal) → integración dreame-vacuum (HACS)
             → cuenta Dreamehome → robot D10 Plus
 ```
 
@@ -14,52 +14,89 @@ Archivos de este repo:
 - `nginx/homeassistant.conf` — reverse proxy HTTPS.
 - `homeassistant/configuration-snippet.yaml` — bloques a fusionar en la config de HA.
 
+**Dominio:** `ha.alexa.alce-soft.com`
+
+**VPS compartido con producción:** este Home Assistant vive en el mismo
+droplet que la app fiscal de producción (`alce-droplet`), que ya corre
+alce-fiscal + postgres + scraper + n8n + elegance-reels con RAM ajustada
+(1.9 GiB, con swap ya parcialmente en uso). Por eso el `docker-compose.yml`
+de aquí:
+- No usa `privileged`/`network_mode: host` (no hace falta: la integración es
+  100% cloud, no hay descubrimiento en la LAN del VPS).
+- Publica el puerto 8123 solo en `127.0.0.1` (nginx en el host hace el proxy;
+  no queda expuesto directo a internet).
+- Trae `mem_limit`/`memswap_limit: 350m` para que un pico de HA/HACS no
+  arrastre a swap pesado al resto de los servicios (incluida la app fiscal
+  de clientes reales).
+
+Antes de levantar el contenedor, conviene revisar RAM disponible en el
+droplet (`free -h`) — si "available" está muy bajo, ver `CONTEXTO.md` antes
+de continuar.
+
 ---
 
 ## Paso 1 — Levantar Home Assistant en el VPS
 
-Conéctate por SSH a tu VPS de DigitalOcean y, en la carpeta donde subas este
-proyecto (o clonando este repo si lo subes a git):
+Por SSH al droplet (`ssh alce-droplet`), en `/opt/dreame-ha` (clonando este
+repo si lo subes a git, separado de `/opt/alce-fiscal`):
 
 ```bash
 mkdir -p homeassistant/config
 docker compose up -d
 ```
 
-Verifica que responda localmente:
+Verifica que responda localmente (el puerto solo escucha en localhost):
 
 ```bash
-curl -I http://localhost:8123
+curl -I http://127.0.0.1:8123
 ```
 
-Entra por primera vez a `http://IP_DEL_VPS:8123` (temporalmente, antes del HTTPS)
-para crear tu usuario admin de Home Assistant.
+Para crear tu usuario admin de Home Assistant la primera vez, sin abrir el
+puerto a internet, usa un túnel SSH desde tu máquina:
+
+```bash
+ssh -L 8123:127.0.0.1:8123 alce-droplet
+```
+
+y entra a `http://localhost:8123` en tu navegador.
 
 ## Paso 2 — Dominio + HTTPS válido
 
-1. Crea un registro DNS tipo A: `ha.tudominio.com` → IP de tu VPS.
-2. Instala Nginx y Certbot en el VPS:
-   ```bash
-   sudo apt update && sudo apt install -y nginx certbot python3-certbot-nginx
-   ```
-3. Copia `nginx/homeassistant.conf` a `/etc/nginx/sites-available/homeassistant`,
-   reemplaza `TUDOMINIO.com` por tu dominio real, y enlázalo:
+1. Crea un registro DNS tipo A: `ha.alexa.alce-soft.com` → IP del droplet
+   (`165.227.209.218`). Este paso lo haces tú en tu proveedor de DNS — no
+   está automatizado aquí.
+2. Nginx y Certbot ya están instalados en el droplet (los usa alce-fiscal).
+   Si no lo estuvieran: `sudo apt update && sudo apt install -y nginx certbot python3-certbot-nginx`.
+3. Copia `nginx/homeassistant.conf` a `/etc/nginx/sites-available/homeassistant`
+   y enlázalo (el dominio ya viene resuelto en el archivo):
    ```bash
    sudo ln -s /etc/nginx/sites-available/homeassistant /etc/nginx/sites-enabled/
    sudo nginx -t && sudo systemctl reload nginx
    ```
-4. Emite el certificado (Certbot edita el `.conf` automáticamente):
+4. Cuando el DNS ya resuelva, emite el certificado (Certbot edita el `.conf`
+   automáticamente):
    ```bash
-   sudo certbot --nginx -d ha.tudominio.com
+   sudo certbot --nginx -d ha.alexa.alce-soft.com
    ```
-5. Confirma que `https://ha.tudominio.com` carga Home Assistant con candado
-   válido (sin advertencias del navegador).
+5. Confirma que `https://ha.alexa.alce-soft.com` carga Home Assistant con
+   candado válido (sin advertencias del navegador).
 6. Aplica el snippet `homeassistant/configuration-snippet.yaml` dentro de
    `homeassistant/config/configuration.yaml` (bloque `http:` con
    `trusted_proxies`) y reinicia:
    ```bash
    docker compose restart homeassistant
    ```
+   **Si Home Assistant ya había arrancado antes sin este bloque**, el YAML de
+   `http:` queda ignorado para siempre (se migra a almacenamiento interno solo
+   en el primer arranque — ver la nota completa en
+   `homeassistant/configuration-snippet.yaml`). En ese caso, o bien completas
+   el onboarding y configuras "Usar X-Forwarded-For" + "Proxies de confianza"
+   desde **Configuración → Sistema → Red** en la UI, o editas directamente
+   `homeassistant/config/.storage/http` (con el contenedor detenido) para
+   añadir `use_x_forwarded_for: true` y `trusted_proxies` dentro de
+   `data.stable`. Si ves en los logs `docker logs homeassistant` el error
+   *"HTTP integration is not set-up for reverse proxies"* pese a tener el
+   YAML correcto, es justo este caso.
 
 ## Paso 3 — Vincular el robot (integración Dreame Vacuum vía HACS)
 
@@ -92,8 +129,8 @@ en la skill, luego reinicia Home Assistant.
    **Provision your own** (no publiques en la tienda, quedará privada/en modo
    desarrollo).
 3. En la sección **Account Linking** de la skill, configura:
-   - Authorization URI: `https://ha.tudominio.com/auth/authorize`
-   - Access Token URI: `https://ha.tudominio.com/auth/token`
+   - Authorization URI: `https://ha.alexa.alce-soft.com/auth/authorize`
+   - Access Token URI: `https://ha.alexa.alce-soft.com/auth/token`
    - Client ID: `https://pitangui.amazon.com/` (o el dominio Alexa de tu
      región — revisa la tabla oficial en la doc de HA si usas otra región)
    - Client Secret: cualquier cadena que inventes (Home Assistant no la valida,
@@ -117,7 +154,7 @@ en la skill, luego reinicia Home Assistant.
 4. Reemplaza el código de ejemplo por el script oficial de Home Assistant:
    https://gist.github.com/matt2005/744b5ef548cc13d88d0569eea65f5e5b
 5. Variables de entorno de la función:
-   - `BASE_URL` = `https://ha.tudominio.com` (sin `/` al final)
+   - `BASE_URL` = `https://ha.alexa.alce-soft.com` (sin `/` al final)
    - (`DEBUG=True` opcional mientras pruebas)
 6. Añade un **trigger "Alexa Smart Home"** e ingresa el Skill ID del paso 5.
 7. Copia el **ARN** de la función Lambda y pégalo en el campo **Default
