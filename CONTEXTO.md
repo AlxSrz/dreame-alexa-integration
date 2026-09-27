@@ -32,7 +32,20 @@ Alexa (voz) → skill privada de Alexa Smart Home → AWS Lambda (puente, Python
   — gratis indefinidamente a este nivel de uso (free tier permanente de
   Lambda: 1,000,000 invocaciones/mes).
 - El usuario ya tiene un **VPS en DigitalOcean** — no se necesita hardware
-  nuevo (ej. Raspberry Pi).
+  nuevo (ej. Raspberry Pi). **Decisión (sept. 2026):** se instala en el mismo
+  droplet que ya usa el proyecto `alce-fiscal` (`alce-droplet`,
+  165.227.209.218, 1.9 GiB RAM), no en un droplet separado. Ese droplet
+  aloja producción real (alce-fiscal + postgres con datos fiscales de
+  clientes + scraper + n8n + elegance-reels) y ya está justo de RAM (al
+  revisar: solo ~750 MiB "available", swap ya al ~50% de uso). Mitigación
+  elegida: `mem_limit`/`memswap_limit: 350m` en el contenedor de Home
+  Assistant y sin `privileged`/`network_mode: host` (innecesario porque la
+  integración es cloud, no LAN) — puerto 8123 solo en `127.0.0.1`, nginx del
+  host hace el proxy HTTPS. Detalle completo en `README.md`.
+- **Dominio elegido:** `ha.alexa.alce-soft.com` (subdominio bajo el dominio
+  que ya usa alce-fiscal). El registro DNS tipo A lo crea el usuario — no hay
+  automatización de DNS disponible en este entorno.
+- **Ruta en el droplet:** `/opt/dreame-ha` (separado de `/opt/alce-fiscal`).
 - Alternativa descartada: Nabu Casa / Home Assistant Cloud (~$6.5 USD/mes) —
   más simple (sin configurar Lambda/OAuth) pero el usuario prefirió la ruta
   gratuita al self-hosted, ya que tiene el VPS.
@@ -45,23 +58,41 @@ Alexa (voz) → skill privada de Alexa Smart Home → AWS Lambda (puente, Python
 
 ## Archivos del proyecto (en esta misma carpeta)
 
-- `docker-compose.yml` — contenedor de Home Assistant.
-- `nginx/homeassistant.conf` — reverse proxy HTTPS, con placeholder de dominio
-  `ha.TUDOMINIO.com` pendiente de reemplazar.
+- `docker-compose.yml` — contenedor de Home Assistant, sin `privileged`/
+  `network_mode: host`, puerto 8123 solo en `127.0.0.1`, con `mem_limit`.
+- `nginx/homeassistant.conf` — reverse proxy HTTPS, ya con el dominio real
+  `ha.alexa.alce-soft.com`.
 - `homeassistant/configuration-snippet.yaml` — bloques `http:` y
   `alexa: smart_home:`, con placeholders de `client_id`/`client_secret` de la
-  skill pendientes de rellenar.
+  skill pendientes de rellenar (paso 5 del README).
 - `README.md` — guía completa de 7 pasos: Home Assistant en el VPS → dominio
   + HTTPS → integración HACS + Dreame → configuración `alexa:` → skill privada
   en Alexa Developer Console → función AWS Lambda puente → pruebas.
 
-## Estado actual
+## Estado actual (27 sept 2026)
 
-Nada de esto se ha ejecutado todavía en el VPS real ni en las consolas de
-AWS/Amazon — solo existen los archivos de configuración locales y la guía.
+**Pasos 1 y 2 del README completados:**
+- Home Assistant corriendo en `alce-droplet` (`/opt/dreame-ha`), con
+  `mem_limit: 512m`. Verificado estable junto al resto de servicios del
+  droplet (alce-fiscal, scraper, elegance-reels, n8n).
+- DNS `ha.alexa.alce-soft.com` → `165.227.209.218` creado y propagado por el
+  usuario (Hostgator cPanel → Zone Editor).
+- Certificado Let's Encrypt emitido y desplegado (`certbot --nginx`), sitio
+  habilitado en `/etc/nginx/sites-enabled/homeassistant`. `https://ha.alexa.alce-soft.com`
+  responde con candado válido.
+- **Bug encontrado y resuelto:** el bloque `http:` de YAML se ignoraba
+  silenciosamente porque Home Assistant ya había arrancado una vez sin él
+  (migración YAML→almacenamiento interno ocurre una sola vez). Se corrigió
+  editando directamente `homeassistant/config/.storage/http` (clave
+  `data.stable`) con el contenedor detenido — detalle completo en
+  `README.md` Paso 2.6 y en `homeassistant/configuration-snippet.yaml`.
+  También se corrigió `trusted_proxies` para incluir la subred del bridge de
+  Docker (`172.20.0.0/16`), no solo `127.0.0.1`, porque así es como nginx
+  (en el host) le llega a Home Assistant a través del puerto publicado.
 
-**Antes de continuar, hace falta:**
-- Confirmar qué dominio se va a usar.
+**Antes de continuar con el Paso 3, hace falta:**
+- Que el usuario complete el onboarding (crear su usuario admin) por túnel
+  SSH — ver README Paso 1.
 - Confirmar si HACS ya está instalado en Home Assistant.
 - Confirmar el estado de las cuentas Dreamehome / AWS / Amazon Developer.
 

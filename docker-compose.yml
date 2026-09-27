@@ -3,8 +3,25 @@ services:
     container_name: homeassistant
     image: ghcr.io/home-assistant/home-assistant:stable
     restart: unless-stopped
-    privileged: true
-    network_mode: host
+    # Sin `privileged`/`network_mode: host`: no hace falta descubrimiento de
+    # red local (mDNS/SSDP) porque el robot se controla vía la nube de
+    # Dreamehome, no en la LAN del VPS. Este droplet también corre alce-fiscal
+    # con datos fiscales de clientes, así que conviene el menor privilegio
+    # posible y no exponer 8123 fuera de localhost (nginx hace el proxy).
+    ports:
+      - "127.0.0.1:8123:8123"
+    # El droplet (1.9 GiB) ya corre alce-fiscal + postgres + scraper + n8n +
+    # elegance-reels con RAM ajustada (ver CONTEXTO.md). Este límite evita que
+    # un pico de HA/HACS empuje al resto a swap pesado; `memswap_limit` igual
+    # a `mem_limit` le quita swap propio al contenedor (si se pasa, lo mata
+    # Docker a él, no degrada todo el host).
+    # Medido en producción (27 sept 2026): HA base recién iniciado, SIN HACS
+    # ni la integración Dreame, ya usa ~338MiB — 350m se quedaba corto. 512m
+    # deja colchón para HACS + la integración + el recorder sin acercarse al
+    # límite real del host (quedaban ~674Mi "available" con este contenedor
+    # corriendo).
+    mem_limit: 512m
+    memswap_limit: 512m
     volumes:
       - ./homeassistant/config:/config
       - /etc/localtime:/etc/localtime:ro

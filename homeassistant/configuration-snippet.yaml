@@ -1,11 +1,31 @@
 # Añadir/mezclar estos bloques dentro de homeassistant/config/configuration.yaml
 # (NO reemplaces todo el archivo, Home Assistant ya trae uno por defecto — solo
 # agrega/edita las claves "http:" y "alexa:").
+#
+# IMPORTANTE (descubierto en producción, 27 sept 2026): en versiones recientes
+# de Home Assistant, el bloque `http:` de YAML solo se migra a almacenamiento
+# interno UNA VEZ, en el primer arranque. Si Home Assistant ya arrancó antes
+# sin este bloque (como en un `docker compose up -d` inicial sin este archivo
+# aplicado todavía), el YAML queda ignorado para siempre en los arranques
+# siguientes — hay que configurar "Usar X-Forwarded-For" y "Proxies de
+# confianza" desde la UI (Configuración → Sistema → Red), una vez completado
+# el onboarding, en lugar de (o además de) este archivo. Si no hay onboarding
+# completado todavía, la alternativa es editar directamente
+# homeassistant/config/.storage/http (clave "data.stable") con el contenedor
+# detenido y reiniciar.
+#
+# Nota sobre el proxy IP: cuando el puerto se publica como
+# "127.0.0.1:8123:8123" en Docker, la conexión de nginx le llega a Home
+# Assistant con la IP de la puerta de enlace del bridge de Docker (revisa
+# `docker network inspect <red>` — típicamente algo como 172.x.0.1), NO como
+# 127.0.0.1. `trusted_proxies` debe incluir esa subred (ej. 172.20.0.0/16),
+# no solo 127.0.0.1.
 
 http:
   use_x_forwarded_for: true
   trusted_proxies:
     - 127.0.0.1
+    - 172.20.0.0/16  # subred del bridge de Docker que ve nginx — ajusta si cambia
 
 # Rellenar client_id / client_secret DESPUÉS de crear la skill en el paso 5
 # del README (Alexa Developer Console > Account Linking).
