@@ -11,17 +11,31 @@ services:
     ports:
       - "127.0.0.1:8123:8123"
     # El droplet (1.9 GiB) ya corre alce-fiscal + postgres + scraper + n8n +
-    # elegance-reels con RAM ajustada (ver CONTEXTO.md). Este límite evita que
-    # un pico de HA/HACS empuje al resto a swap pesado; `memswap_limit` igual
-    # a `mem_limit` le quita swap propio al contenedor (si se pasa, lo mata
-    # Docker a él, no degrada todo el host).
-    # Medido en producción (27 sept 2026): HA base recién iniciado, SIN HACS
-    # ni la integración Dreame, ya usa ~338MiB — 350m se quedaba corto. 512m
-    # deja colchón para HACS + la integración + el recorder sin acercarse al
-    # límite real del host (quedaban ~674Mi "available" con este contenedor
-    # corriendo).
-    mem_limit: 512m
-    memswap_limit: 512m
+    # elegance-reels con RAM ajustada (ver CONTEXTO.md). Este límite acota a
+    # HA para que no arrastre al resto a swap pesado.
+    #
+    # Historial de medidas en producción (27 sept 2026), contenedor real:
+    #   - 350m: insuficiente. HA pelado (sin HACS) ya usa ~338MiB.
+    #   - 512m: insuficiente con HACS + `dreame_vacuum`. El kernel mató el
+    #     proceso 12 veces dentro del cgroup ("Memory cgroup out of memory:
+    #     Killed process python3 ... anon-rss:517340kB"), en bucle de
+    #     reinicio cada ~30s al llegar al techo durante el arranque. En
+    #     reposo quedaba en 464MiB/512MiB (90%) — cualquier consulta de la
+    #     integración o abrir la UI lo volvía a matar.
+    #   - 768m: elegido. Deja ~250MiB de colchón sobre el consumo en reposo
+    #     observado (464MiB) para mapas/cámara/polling de dreame_vacuum.
+    #
+    # `memswap_limit` se deja por ENCIMA del de RAM (256m de swap propio) a
+    # propósito: con memswap_limit == mem_limit el contenedor no puede usar
+    # swap en absoluto, así que cualquier pico transitorio es muerte
+    # instantánea; con este margen, un pico se va a swap (más lento pero
+    # vivo) y el peor caso queda acotado en 1 GiB, sin poder desangrar al
+    # resto del host. Si `docker stats` se pega al techo de RAM de forma
+    # sostenida, el siguiente paso es recortar `default_config:` (quitar
+    # radio_browser/go2rtc/stream, discovery) en configuration.yaml —
+    # ver CONTEXTO.md.
+    mem_limit: 768m
+    memswap_limit: 1024m
     volumes:
       - ./homeassistant/config:/config
       - /etc/localtime:/etc/localtime:ro
