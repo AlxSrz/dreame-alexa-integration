@@ -72,9 +72,10 @@ Alexa (voz) → skill privada de Alexa Smart Home → AWS Lambda (puente, Python
 ## Estado actual (27 sept 2026)
 
 **Pasos 1 y 2 del README completados:**
-- Home Assistant corriendo en `alce-droplet` (`/opt/dreame-ha`), con
-  `mem_limit: 512m`. Verificado estable junto al resto de servicios del
-  droplet (alce-fiscal, scraper, elegance-reels, n8n).
+- Home Assistant corriendo en `alce-droplet` (`/opt/dreame-ha`), inicialmente
+  con `mem_limit: 512m` (subido después a `768m`, ver más abajo). Verificado
+  estable junto al resto de servicios del droplet (alce-fiscal, scraper,
+  elegance-reels, n8n).
 - DNS `ha.alexa.alce-soft.com` → `165.227.209.218` creado y propagado por el
   usuario (Hostgator cPanel → Zone Editor).
 - Certificado Let's Encrypt emitido y desplegado (`certbot --nginx`), sitio
@@ -90,9 +91,14 @@ Alexa (voz) → skill privada de Alexa Smart Home → AWS Lambda (puente, Python
   Docker (`172.20.0.0/16`), no solo `127.0.0.1`, porque así es como nginx
   (en el host) le llega a Home Assistant a través del puerto publicado.
 
-**Paso 3 completado (mismo día, más tarde):**
-- Onboarding hecho por el usuario (admin `ha-anbl-srz`).
-- HACS instalado y `Tasshack/dreame-vacuum` añadido desde HACS.
+**Onboarding completado:** usuario admin de Home Assistant creado
+(`ha-anbl-srz`) por túnel SSH.
+
+**Paso 3 completado:**
+- HACS instalado y `Tasshack/dreame-vacuum` añadido desde HACS (versión beta,
+  necesaria para login con cuenta Dreamehome — la versión estable solo
+  soporta login contra la nube de Xiaomi y daba "Could not login, check the
+  credentials" con una cuenta Dreamehome pura).
 - Robot vinculado: *config entry* `Dreame Vacuum` con título `D10 Plus Gen 2`
   y `unique_id` = MAC `70:c9:32:c7:f5:1b`; entidad `vacuum.d10_plus_gen_2`
   registrada y reportando estado `docked` → conexión viva con la nube de
@@ -112,10 +118,16 @@ pico >517 MiB. Se subió a `mem_limit: 768m` / `memswap_limit: 1024m`
 (dejando 256 MiB de swap propio a propósito: con `memswap_limit == mem_limit`
 cualquier pico transitorio es muerte instantánea). Verificado estable en
 441.7 MiB / 768 MiB (57.5%), sin nuevos OOM, HTTP 200 en local y por HTTPS.
+También se desactivó el `recorder` (historial/logbook/estadísticas) por
+completo — no aporta nada para control por voz y es de lo que más RAM/disco
+consume con el tiempo.
 **Si algún día se acerca al techo de forma sostenida**, el siguiente recorte
 es reemplazar `default_config:` por una lista explícita sin
 `radio_browser`/`go2rtc`/`stream` ni los discovery (`ssdp`, `zeroconf`,
-`dhcp`, `usb`, `bluetooth`) — en este VPS no hay LAN que descubrir.
+`dhcp`, `usb`, `bluetooth`) — en este VPS no hay LAN que descubrir. Si eso
+tampoco alcanza, la alternativa de fondo es mover Home Assistant a su propio
+droplet (evaluado y descartado por ahora, riesgo aceptado — ver decisión
+más abajo).
 
 **Pasos 4, 5 y 6 completados (27 sept 2026):**
 - Bloque `alexa:` con los valores reales de la skill aplicado en el
@@ -136,8 +148,18 @@ es reemplazar `default_config:` por una lista explícita sin
   `payloadVersion` y responde `INVALID_REQUEST` ante un evento sin token
   (comportamiento correcto).
 
-**Pendiente (Paso 7):** pegar el ARN como *Default endpoint* en la pestaña
-Smart Home de la skill, activar la skill en la app de Alexa, completar el
-account linking (login contra `ha.alexa.alce-soft.com`), decir "Alexa,
+**Riesgo de fondo reconocido y aceptado (27 sept 2026):** aun con estos
+ajustes, el droplet compartido sigue muy justo de RAM en general (todo el
+sistema, no solo el contenedor de HA). Se decidió **aceptar el riesgo por
+ahora** y seguir avanzando en el droplet compartido en vez de migrar a uno
+separado, dado que ya quedó estable. Si vuelve a fallar, la opción de
+respaldo es un droplet nuevo y dedicado solo para Home Assistant (~$6-12
+USD/mes según RAM, 1-2 GB).
+
+**Pendiente (Paso 7) — lo hace el usuario:** pegar el ARN
+`arn:aws:lambda:us-east-1:283449825232:function:dreame-alexa-bridge` como
+*Default endpoint* en la pestaña Smart Home de la skill, activar la skill en
+la app de Alexa (con la misma cuenta de Amazon del desarrollador), completar
+el account linking (login contra `ha.alexa.alce-soft.com`), decir "Alexa,
 descubre dispositivos" y probar encender/apagar. Pendiente también lo de las
-zonas como `switch` helpers (ver arriba).
+zonas como `switch` helpers (ver arriba, sección de arquitectura).
