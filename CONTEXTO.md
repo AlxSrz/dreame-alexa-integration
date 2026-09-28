@@ -156,10 +156,25 @@ separado, dado que ya quedó estable. Si vuelve a fallar, la opción de
 respaldo es un droplet nuevo y dedicado solo para Home Assistant (~$6-12
 USD/mes según RAM, 1-2 GB).
 
-**Pendiente (Paso 7) — lo hace el usuario:** pegar el ARN
-`arn:aws:lambda:us-east-1:283449825232:function:dreame-alexa-bridge` como
-*Default endpoint* en la pestaña Smart Home de la skill, activar la skill en
-la app de Alexa (con la misma cuenta de Amazon del desarrollador), completar
-el account linking (login contra `ha.alexa.alce-soft.com`), decir "Alexa,
-descubre dispositivos" y probar encender/apagar. Pendiente también lo de las
-zonas como `switch` helpers (ver arriba, sección de arquitectura).
+**Paso 7 completado y en funcionamiento (27-28 sept 2026):**
+- La skill quedó habilitada y vinculada; "Alexa, descubre dispositivos"
+  encuentra el robot y los comandos de voz procesan bien (verificado en los
+  logs de CloudWatch de la Lambda: directivas reales respondidas en ~300 ms).
+- Gotcha del linking: al rehacer el account linking, HA puede quedar
+  reintentando ChangeReports con el token viejo
+  (`INVALID_ACCESS_TOKEN_EXCEPTION` en `alexa.state_report` cada ~30 s).
+  Desactivar y reactivar la skill en la app de Alexa regenera tokens.
+- **Cuentas (importante):** la skill y el robot viven en la cuenta de Amazon
+  `alx.srz@gmail.com`; la de `alx.srz@alce-soft.com` quedó fuera (no tiene
+  vendor). Todo el flujo Alexa (app de Alexa, Echo, developer console) debe
+  usarse con la cuenta gmail.
+- Gotcha del trigger Lambda: el `Principal` correcto para skills Smart Home
+  es **`alexa-connectedhome.amazon.com`** (el de `alexa-appkit.amazon.com`
+  es para skills de conversación y hace que la consola rechace el ARN con un
+  mensaje engañoso). Detalle y comandos en `lambda/README.md`. En la política
+  quedó también un statement viejo (`alexa-appkit`, Sid `alexa-smart-home`)
+  que es inofensivo; se puede borrar con `lambda:RemovePermission` si se
+  pide a la política del usuario IAM.
+
+**Pendiente (backlog):** lo de las zonas como `switch` helpers (ver arriba,
+sección de arquitectura).
